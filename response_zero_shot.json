@@ -1,0 +1,76 @@
+{
+  "strategy": "zero_shot",
+  "prompt_prefix": "create table address (\n    address_id integer primary key,\n    city varchar(35) not null,\n    state char(2) not null,\n    street varchar(50) not null,\n    zip varchar(10) not null\n);\n\ncreate table school (\n    school_id integer primary key,\n    name varchar(50) not null,\n    division varchar(20) not null,\n    address_id integer not null,\n    foreign key (address_id) references address (address_id)\n);\n\ncreate table team (\n    team_id integer primary key,\n    team_name varchar(50) not null,\n    school_id integer not null,\n    foreign key (school_id) references school (school_id)\n);\n\ncreate table player (\n    player_id integer primary key,\n    first_name varchar(35) not null,\n    middle_name varchar(35),\n    last_name varchar(35) not null,\n    graduation_date date not null\n);\n\ncreate table course (\n    course_id integer primary key,\n    name varchar(50) not null,\n    par integer not null,\n    yardage integer not null,\n    address_id integer not null,\n    course_rating decimal(4, 1) not null,\n    slope_rating integer not null,\n    foreign key (address_id) references address (address_id)\n);\n\ncreate table tournament (\n    tournament_id integer primary key,\n    name varchar(50) not null,\n    date date not null,\n    course_id integer not null,\n    foreign key (course_id) references course (course_id)\n);\n\ncreate table team_tournament (\n    team_id integer not null,\n    tournament_id integer not null,\n    primary key (team_id, tournament_id),\n    foreign key (team_id) references team (team_id),\n    foreign key (tournament_id) references tournament (tournament_id)\n);\n\ncreate table player_tournament (\n    player_id integer not null,\n    tournament_id integer not null,\n    front_nine_score integer check (front_nine_score > 0),\n    back_nine_score integer check (back_nine_score > 0),\n    team_id integer not null,\n    primary key (player_id, tournament_id),\n    foreign key (player_id) references player (player_id),\n    -- composite FK: a player can only be listed under a team entered in that tournament\n    foreign key (team_id, tournament_id) references team_tournament (team_id, tournament_id)\n);\n\n-- indexes for foreign keys and common lookups\ncreate index idx_school_address on school (address_id);\ncreate index idx_team_school on team (school_id);\ncreate index idx_course_address on course (address_id);\ncreate index idx_tournament_course on tournament (course_id);\ncreate index idx_team_tournament_tournament on team_tournament (tournament_id);\ncreate index idx_player_tournament_tournament on player_tournament (tournament_id);\ncreate index idx_player_tournament_team on player_tournament (team_id, tournament_id); Give me a sqlite select statement that answers the question. Only respond with sqlite syntax. If there is an error do not explain it!",
+  "questionResults": [
+    {
+      "question": "Who has the lowest average 18 hole score?",
+      "sql": "\nSELECT p.first_name, p.last_name, AVG(pt.front_nine_score + pt.back_nine_score) AS average_score\nFROM player p\nJOIN player_tournament pt ON p.player_id = pt.player_id\nGROUP BY p.player_id\nORDER BY average_score ASC\nLIMIT 1;\n",
+      "queryRawResponse": "[('Brigham', 'Hale', 74.0)]",
+      "friendlyResponse": "Brigham Hale has the lowest average 18-hole score at 74.0.",
+      "error": "None"
+    },
+    {
+      "question": "What team has the lowest average score across all tournaments?",
+      "sql": "\nSELECT pt.team_id, AVG(pt.front_nine_score + pt.back_nine_score) AS average_score\nFROM player_tournament pt\nGROUP BY pt.team_id\nORDER BY average_score ASC\nLIMIT 1;\n",
+      "queryRawResponse": "[(3, 77.55555555555556)]",
+      "friendlyResponse": "The team with the lowest average score across all tournaments is Team 3, with an average of 77.56.",
+      "error": "None"
+    },
+    {
+      "question": "Which course is the hardest by slope rating?",
+      "sql": "\nSELECT name, slope_rating \nFROM course \nORDER BY slope_rating DESC \nLIMIT 1;\n",
+      "queryRawResponse": "[('Sand Hollow Resort', 144)]",
+      "friendlyResponse": "The hardest course by slope rating is Sand Hollow Resort, with a rating of 144.",
+      "error": "None"
+    },
+    {
+      "question": "Which player won the most tournaments?",
+      "sql": "\nSELECT p.first_name, p.last_name, COUNT(pt.tournament_id) AS tournament_wins\nFROM player p\nJOIN player_tournament pt ON p.player_id = pt.player_id\nGROUP BY p.player_id\nORDER BY tournament_wins DESC\nLIMIT 1;\n",
+      "queryRawResponse": "[('Jake', 'Anderson', 4)]",
+      "friendlyResponse": "Jake Anderson won the most tournaments with a total of 4.",
+      "error": "None"
+    },
+    {
+      "question": "Which team had the best combined score at each tournament?",
+      "sql": "\nSELECT pt.tournament_id, tt.team_id, SUM(pt.front_nine_score + pt.back_nine_score) AS combined_score\nFROM player_tournament pt\nJOIN team_tournament tt ON pt.team_id = tt.team_id AND pt.tournament_id = tt.tournament_id\nGROUP BY pt.tournament_id, tt.team_id\nHAVING combined_score = (\n    SELECT MAX(SUM(pt2.front_nine_score + pt2.back_nine_score)\n                ) \n    FROM player_tournament pt2 \n    JOIN team_tournament tt2 ON pt2.team_id = tt2.team_id AND pt2.tournament_id = tt2.tournament_id \n    WHERE pt2.tournament_id = pt.tournament_id \n    GROUP BY tt2.team_id\n);\n",
+      "queryRawResponse": "",
+      "friendlyResponse": "",
+      "error": "misuse of aggregate function SUM()"
+    },
+    {
+      "question": "Which players withdrew before finishing a round?",
+      "sql": "\nSELECT p.player_id, p.first_name, p.middle_name, p.last_name, pt.tournament_id\nFROM player p\nJOIN player_tournament pt ON p.player_id = pt.player_id\nWHERE pt.front_nine_score IS NULL OR pt.back_nine_score IS NULL;\n",
+      "queryRawResponse": "[(11, 'Ty', None, 'Madsen', 1), (14, 'Hunter', None, 'Pratt', 2)]",
+      "friendlyResponse": "Ty Madsen and Hunter Pratt withdrew before finishing their rounds.",
+      "error": "None"
+    },
+    {
+      "question": "Which seniors in the class of 2025 played in every tournament?",
+      "sql": "\nSELECT p.first_name, p.last_name\nFROM player p\nJOIN player_tournament pt ON p.player_id = pt.player_id\nWHERE p.graduation_date = '2025-05-31'  -- Assuming graduation date is the last day of May\nGROUP BY p.player_id\nHAVING COUNT(DISTINCT pt.tournament_id) = (SELECT COUNT(*) FROM tournament);\n",
+      "queryRawResponse": "[]",
+      "friendlyResponse": "It looks like no seniors in the class of 2025 played in every tournament.",
+      "error": "None"
+    },
+    {
+      "question": "Which players have played for more than one team?",
+      "sql": "\nSELECT p.first_name, p.last_name\nFROM player p\nJOIN player_tournament pt ON p.player_id = pt.player_id\nJOIN team_tournament tt ON pt.team_id = tt.team_id\nGROUP BY p.player_id\nHAVING COUNT(DISTINCT tt.team_id) > 1;\n",
+      "queryRawResponse": "[('Mason', 'Fowler')]",
+      "friendlyResponse": "Mason Fowler is a player who has played for more than one team.",
+      "error": "None"
+    },
+    {
+      "question": "What is the average 18 hole score for each division?",
+      "sql": "\nSELECT s.division, AVG(pt.front_nine_score + pt.back_nine_score) AS average_18_hole_score\nFROM player_tournament pt\nJOIN team t ON pt.team_id = t.team_id\nJOIN school s ON t.school_id = s.school_id\nGROUP BY s.division;\n",
+      "queryRawResponse": "[('3A', 86.0), ('5A', 81.93548387096774), ('6A', 77.55555555555556)]",
+      "friendlyResponse": "The average 18-hole scores are 86.0 for 3A, 81.94 for 5A, and 77.56 for 6A.",
+      "error": "None"
+    },
+    {
+      "question": "Which players have never played in a tournament?",
+      "sql": "\nSELECT p.player_id, p.first_name, p.middle_name, p.last_name \nFROM player p \nLEFT JOIN player_tournament pt ON p.player_id = pt.player_id \nWHERE pt.tournament_id IS NULL;\n",
+      "queryRawResponse": "[(16, 'Noah', None, 'Reeves')]",
+      "friendlyResponse": "Noah Reeves is a player who has never participated in a tournament.",
+      "error": "None"
+    }
+  ]
+}
